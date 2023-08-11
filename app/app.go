@@ -120,7 +120,7 @@ import (
 )
 
 const (
-	AccountAddressPrefix = "cosmos"
+	AccountAddressPrefix = "stateset"
 	Name                 = "stateset"
 )
 
