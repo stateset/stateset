@@ -1,0 +1,7 @@
+syntax = "proto3";
+package stateset.stateset;
+
+option go_package = "github.com/stateset/stateset/x/stateset/types";
+
+// Msg defines the Msg service.
+service Msg {}

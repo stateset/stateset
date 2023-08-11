@@ -1,0 +1,12 @@
+syntax = "proto3";
+package stateset.stateset;
+
+import "gogoproto/gogo.proto";
+import "stateset/stateset/params.proto";
+
+option go_package = "github.com/stateset/stateset/x/stateset/types";
+
+// GenesisState defines the stateset module's genesis state.
+message GenesisState {
+  Params params = 1 [(gogoproto.nullable) = false];
+}

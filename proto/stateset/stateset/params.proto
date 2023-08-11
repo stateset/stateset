@@ -1,0 +1,12 @@
+syntax = "proto3";
+package stateset.stateset;
+
+import "gogoproto/gogo.proto";
+
+option go_package = "github.com/stateset/stateset/x/stateset/types";
+
+// Params defines the parameters for the module.
+message Params {
+  option (gogoproto.goproto_stringer) = false;
+  
+}
