@@ -1,0 +1,12 @@
+use cosmwasm_std::{Addr, Uint128};
+use cw_storage_plus::{Item, Map};
+use stateset_owner::Owner;
+use stateset_loan_types::loan::{Collateral, Config, Debt, Market};
+
+pub const OWNER: Owner = Owner::new("owner");
+pub const EMERGENCY_OWNER: Owner = Owner::new("emergency_owner");
+pub const CONFIG: Item<Config<Addr>> = Item::new("config");
+pub const MARKETS: Map<&str, Market> = Map::new("markets");
+pub const COLLATERALS: Map<(&Addr, &str), Collateral> = Map::new("collaterals");
+pub const DEBTS: Map<(&Addr, &str), Debt> = Map::new("debts");
+pub const UNCOLLATERALIZED_LOAN_LIMITS: Map<(&Addr, &str), Uint128> = Map::new("limits");

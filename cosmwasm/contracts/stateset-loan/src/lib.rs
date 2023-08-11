@@ -1,0 +1,9 @@
+#[cfg(not(feature = "library"))]
+pub mod contract;
+pub mod error;
+pub mod execute;
+pub mod health;
+pub mod interest_rates;
+pub mod query;
+pub mod state;
+pub mod user;
