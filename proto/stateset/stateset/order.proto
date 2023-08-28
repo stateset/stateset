@@ -1,0 +1,17 @@
+syntax = "proto3";
+package stateset.stateset;
+
+option go_package = "github.com/stateset/stateset/x/stateset/types";
+
+message Order {
+  uint64 id = 1;
+  string number = 2; 
+  string did = 3; 
+  string amount = 4; 
+  string fee = 5; 
+  string createdDate = 6; 
+  string state = 7; 
+  string buyer = 8; 
+  string seller = 9; 
+  
+}

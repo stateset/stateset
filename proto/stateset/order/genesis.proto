@@ -1,0 +1,12 @@
+syntax = "proto3";
+package stateset.order;
+
+import "gogoproto/gogo.proto";
+import "stateset/order/params.proto";
+
+option go_package = "github.com/stateset/stateset/x/order/types";
+
+// GenesisState defines the order module's genesis state.
+message GenesisState {
+  Params params = 1 [(gogoproto.nullable) = false];
+}

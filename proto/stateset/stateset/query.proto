@@ -1,26 +1,58 @@
 syntax = "proto3";
+
 package stateset.stateset;
 
 import "gogoproto/gogo.proto";
 import "google/api/annotations.proto";
 import "cosmos/base/query/v1beta1/pagination.proto";
 import "stateset/stateset/params.proto";
+import "stateset/stateset/order.proto";
 
 option go_package = "github.com/stateset/stateset/x/stateset/types";
 
 // Query defines the gRPC querier service.
 service Query {
+  
   // Parameters queries the parameters of the module.
-  rpc Params(QueryParamsRequest) returns (QueryParamsResponse) {
+  rpc Params (QueryParamsRequest) returns (QueryParamsResponse) {
     option (google.api.http).get = "/stateset/stateset/stateset/params";
+  
+  }
+  
+  // Queries a list of Order items.
+  rpc Order    (QueryGetOrderRequest) returns (QueryGetOrderResponse) {
+    option (google.api.http).get = "/stateset/stateset/stateset/order/{id}";
+  
+  }
+  rpc OrderAll (QueryAllOrderRequest) returns (QueryAllOrderResponse) {
+    option (google.api.http).get = "/stateset/stateset/stateset/order";
+  
   }
 }
-
 // QueryParamsRequest is request type for the Query/Params RPC method.
 message QueryParamsRequest {}
 
 // QueryParamsResponse is response type for the Query/Params RPC method.
 message QueryParamsResponse {
+  
   // params holds all the parameters of this module.
   Params params = 1 [(gogoproto.nullable) = false];
 }
+
+message QueryGetOrderRequest {
+  uint64 id = 1;
+}
+
+message QueryGetOrderResponse {
+  Order Order = 1 [(gogoproto.nullable) = false];
+}
+
+message QueryAllOrderRequest {
+  cosmos.base.query.v1beta1.PageRequest pagination = 1;
+}
+
+message QueryAllOrderResponse {
+  repeated Order                                  Order      = 1 [(gogoproto.nullable) = false];
+           cosmos.base.query.v1beta1.PageResponse pagination = 2;
+}
+

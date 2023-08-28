@@ -19,7 +19,6 @@ import (
 	"github.com/cosmos/cosmos-sdk/client/grpc/tmservice"
 	"github.com/cosmos/cosmos-sdk/codec"
 	"github.com/cosmos/cosmos-sdk/codec/types"
-	"github.com/cosmos/cosmos-sdk/runtime"
 	runtimeservices "github.com/cosmos/cosmos-sdk/runtime/services"
 	"github.com/cosmos/cosmos-sdk/server/api"
 	"github.com/cosmos/cosmos-sdk/server/config"
@@ -52,6 +51,7 @@ import (
 	crisiskeeper "github.com/cosmos/cosmos-sdk/x/crisis/keeper"
 	crisistypes "github.com/cosmos/cosmos-sdk/x/crisis/types"
 	distr "github.com/cosmos/cosmos-sdk/x/distribution"
+	distrclient "github.com/cosmos/cosmos-sdk/x/distribution/client"
 	distrkeeper "github.com/cosmos/cosmos-sdk/x/distribution/keeper"
 	distrtypes "github.com/cosmos/cosmos-sdk/x/distribution/types"
 	"github.com/cosmos/cosmos-sdk/x/evidence"
@@ -86,9 +86,9 @@ import (
 	stakingkeeper "github.com/cosmos/cosmos-sdk/x/staking/keeper"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 	"github.com/cosmos/cosmos-sdk/x/upgrade"
-	upgradeclient "github.com/cosmos/cosmos-sdk/x/upgrade/client"
 	upgradekeeper "github.com/cosmos/cosmos-sdk/x/upgrade/keeper"
 	upgradetypes "github.com/cosmos/cosmos-sdk/x/upgrade/types"
+	ibcclientclient "github.com/cosmos/ibc-go/v2/modules/core/02-client/client"
 	ica "github.com/cosmos/ibc-go/v7/modules/apps/27-interchain-accounts"
 	icacontrollerkeeper "github.com/cosmos/ibc-go/v7/modules/apps/27-interchain-accounts/controller/keeper"
 	icacontrollertypes "github.com/cosmos/ibc-go/v7/modules/apps/27-interchain-accounts/controller/types"
@@ -101,22 +101,31 @@ import (
 	ibctransfertypes "github.com/cosmos/ibc-go/v7/modules/apps/transfer/types"
 	ibc "github.com/cosmos/ibc-go/v7/modules/core"
 	ibcclient "github.com/cosmos/ibc-go/v7/modules/core/02-client"
-	ibcclientclient "github.com/cosmos/ibc-go/v7/modules/core/02-client/client"
 	ibcclienttypes "github.com/cosmos/ibc-go/v7/modules/core/02-client/types"
 	ibcporttypes "github.com/cosmos/ibc-go/v7/modules/core/05-port/types"
 	ibcexported "github.com/cosmos/ibc-go/v7/modules/core/exported"
 	ibckeeper "github.com/cosmos/ibc-go/v7/modules/core/keeper"
 	solomachine "github.com/cosmos/ibc-go/v7/modules/light-clients/06-solomachine"
 	ibctm "github.com/cosmos/ibc-go/v7/modules/light-clients/07-tendermint"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/spf13/cast"
 
 	statesetmodule "github.com/stateset/stateset/x/stateset"
 	statesetmodulekeeper "github.com/stateset/stateset/x/stateset/keeper"
 	statesetmoduletypes "github.com/stateset/stateset/x/stateset/types"
-	// this line is used by starport scaffolding # stargate/app/moduleImport
+
+	ordermodule "github.com/stateset/stateset/x/order"
+		ordermodulekeeper "github.com/stateset/stateset/x/order/keeper"
+		ordermoduletypes "github.com/stateset/stateset/x/order/types"
+// this line is used by starport scaffolding # stargate/app/moduleImport
 
 	appparams "github.com/stateset/stateset/app/params"
 	"github.com/stateset/stateset/docs"
+
+	"github.com/CosmWasm/wasmd/x/wasm"
+	wasmclient "github.com/CosmWasm/wasmd/x/wasm/client"
+	wasmkeeper "github.com/CosmWasm/wasmd/x/wasm/keeper"
+	wasmtypes "github.com/CosmWasm/wasmd/x/wasm/types"
 )
 
 const (
@@ -124,16 +133,25 @@ const (
 	Name                 = "stateset"
 )
 
-// this line is used by starport scaffolding # stargate/wasm/app/enabledProposals
+func GetWasmOpts(appOpts servertypes.AppOptions) []wasm.Option {
+	var wasmOpts []wasm.Option
+	if cast.ToBool(appOpts.Get("telemetry.enabled")) {
+		wasmOpts = append(wasmOpts, wasmkeeper.WithVMCacheMetrics(prometheus.DefaultRegisterer))
+	}
+
+	wasmOpts = append(wasmOpts, wasmkeeper.WithGasRegister(NewStatesetWasmGasRegister()))
+
+	return wasmOpts
+}
 
 func getGovProposalHandlers() []govclient.ProposalHandler {
 	var govProposalHandlers []govclient.ProposalHandler
 	// this line is used by starport scaffolding # stargate/app/govProposalHandlers
+	govProposalHandlers = wasmclient.ProposalHandlers
 
 	govProposalHandlers = append(govProposalHandlers,
 		paramsclient.ProposalHandler,
-		upgradeclient.LegacyProposalHandler,
-		upgradeclient.LegacyCancelProposalHandler,
+		distrclient.ProposalHandler,
 		ibcclientclient.UpdateClientProposalHandler,
 		ibcclientclient.UpgradeProposalHandler,
 		// this line is used by starport scaffolding # stargate/app/govProposalHandler
@@ -145,6 +163,22 @@ func getGovProposalHandlers() []govclient.ProposalHandler {
 var (
 	// DefaultNodeHome default home directories for the application daemon
 	DefaultNodeHome string
+
+	// TODO: Refactor wasm items into a wasm.go file
+	// WasmProposalsEnabled enables all x/wasm proposals when it's value is "true"
+	// and EnableSpecificWasmProposals is empty. Otherwise, all x/wasm proposals
+	// are disabled.
+	WasmProposalsEnabled = "true"
+
+	// EnableSpecificWasmProposals, if set, must be comma-separated list of values
+	// that are all a subset of "EnableAllProposals", which takes precedence over
+	// WasmProposalsEnabled.
+	//
+	// See: https://github.com/CosmWasm/wasmd/blob/02a54d33ff2c064f3539ae12d75d027d9c665f05/x/wasm/internal/types/proposal.go#L28-L34
+	EnableSpecificWasmProposals = ""
+
+	// Upgrades =
+	// Forks    =
 
 	// ModuleBasics defines the module BasicManager is in charge of setting up basic,
 	// non-dependant module elements, such as codec registration
@@ -158,7 +192,7 @@ var (
 		staking.AppModuleBasic{},
 		mint.AppModuleBasic{},
 		distr.AppModuleBasic{},
-		gov.NewAppModuleBasic(getGovProposalHandlers()),
+		gov.NewAppModuleBasic(getGovProposalHandlers()...),
 		params.AppModuleBasic{},
 		crisis.AppModuleBasic{},
 		slashing.AppModuleBasic{},
@@ -174,7 +208,9 @@ var (
 		vesting.AppModuleBasic{},
 		consensus.AppModuleBasic{},
 		statesetmodule.AppModuleBasic{},
-		// this line is used by starport scaffolding # stargate/app/moduleBasic
+		ordermodule.AppModuleBasic{},
+// this line is used by starport scaffolding # stargate/app/moduleBasic
+		wasm.AppModuleBasic{},
 	)
 
 	// module account permissions
@@ -187,13 +223,10 @@ var (
 		stakingtypes.NotBondedPoolName: {authtypes.Burner, authtypes.Staking},
 		govtypes.ModuleName:            {authtypes.Burner},
 		ibctransfertypes.ModuleName:    {authtypes.Minter, authtypes.Burner},
-		// this line is used by starport scaffolding # stargate/app/maccPerms
+		ordermoduletypes.ModuleName: {authtypes.Minter, authtypes.Burner, authtypes.Staking},
+// this line is used by starport scaffolding # stargate/app/maccPerms
+		wasm.ModuleName: {authtypes.Burner},
 	}
-)
-
-var (
-	_ runtime.AppI            = (*App)(nil)
-	_ servertypes.Application = (*App)(nil)
 )
 
 func init() {
@@ -208,7 +241,7 @@ func init() {
 // App extends an ABCI application, but with most of its parameters exported.
 // They are exported for convenience in creating helper functions, as object
 // capabilities aren't needed for testing.
-type App struct {
+type StatesetApp struct {
 	*baseapp.BaseApp
 
 	cdc               *codec.LegacyAmino
@@ -250,7 +283,12 @@ type App struct {
 	ScopedICAHostKeeper  capabilitykeeper.ScopedKeeper
 
 	StatesetKeeper statesetmodulekeeper.Keeper
-	// this line is used by starport scaffolding # stargate/app/keeperDeclaration
+	
+		OrderKeeper ordermodulekeeper.Keeper
+// this line is used by starport scaffolding # stargate/app/keeperDeclaration
+
+	wasmKeeper       wasm.Keeper
+	scopedWasmKeeper capabilitykeeper.ScopedKeeper
 
 	// mm is the module manager
 	mm *module.Manager
@@ -260,8 +298,16 @@ type App struct {
 	configurator module.Configurator
 }
 
-// New returns a reference to an initialized blockchain app
-func New(
+// overrideWasmVariables overrides the wasm variables to:
+//   - allow for larger wasm files
+func overrideWasmVariables() {
+	// Override Wasm size limitation from WASMD.
+	wasmtypes.MaxWasmSize = 3 * 1024 * 1024
+	wasmtypes.MaxProposalWasmSize = wasmtypes.MaxWasmSize
+}
+
+// New returns a reference to an initialized Stateset
+func NewStatesetApp(
 	logger log.Logger,
 	db dbm.DB,
 	traceStore io.Writer,
@@ -271,8 +317,10 @@ func New(
 	invCheckPeriod uint,
 	encodingConfig appparams.EncodingConfig,
 	appOpts servertypes.AppOptions,
+	wasmOpts []wasm.Option,
 	baseAppOptions ...func(*baseapp.BaseApp),
-) *App {
+) *StatesetApp {
+	overrideWasmVariables()
 	appCodec := encodingConfig.Marshaler
 	cdc := encodingConfig.Amino
 	interfaceRegistry := encodingConfig.InterfaceRegistry
@@ -297,12 +345,14 @@ func New(
 		feegrant.StoreKey, evidencetypes.StoreKey, ibctransfertypes.StoreKey, icahosttypes.StoreKey,
 		capabilitytypes.StoreKey, group.StoreKey, icacontrollertypes.StoreKey, consensusparamtypes.StoreKey,
 		statesetmoduletypes.StoreKey,
-		// this line is used by starport scaffolding # stargate/app/storeKey
+		ordermoduletypes.StoreKey,
+// this line is used by starport scaffolding # stargate/app/storeKey
+		wasm.StoreKey,
 	)
 	tkeys := sdk.NewTransientStoreKeys(paramstypes.TStoreKey)
 	memKeys := sdk.NewMemoryStoreKeys(capabilitytypes.MemStoreKey)
 
-	app := &App{
+	app := &StatesetApp{
 		BaseApp:           bApp,
 		cdc:               cdc,
 		appCodec:          appCodec,
@@ -338,6 +388,7 @@ func New(
 	scopedTransferKeeper := app.CapabilityKeeper.ScopeToModule(ibctransfertypes.ModuleName)
 	scopedICAHostKeeper := app.CapabilityKeeper.ScopeToModule(icahosttypes.SubModuleName)
 	// this line is used by starport scaffolding # stargate/app/scopedKeeper
+	scopedWasmKeeper := app.CapabilityKeeper.ScopeToModule(wasm.ModuleName)
 
 	// add keepers
 	app.AccountKeeper = authkeeper.NewAccountKeeper(
@@ -527,7 +578,45 @@ func New(
 	)
 	statesetModule := statesetmodule.NewAppModule(appCodec, app.StatesetKeeper, app.AccountKeeper, app.BankKeeper)
 
-	// this line is used by starport scaffolding # stargate/app/keeperDefinition
+	
+		app.OrderKeeper = *ordermodulekeeper.NewKeeper(
+			appCodec,
+			keys[ordermoduletypes.StoreKey],
+			keys[ordermoduletypes.MemStoreKey],
+			app.GetSubspace(ordermoduletypes.ModuleName),
+			
+			app.BankKeeper,
+)
+		orderModule := ordermodule.NewAppModule(appCodec, app.OrderKeeper, app.AccountKeeper, app.BankKeeper)
+
+		// this line is used by starport scaffolding # stargate/app/keeperDefinition
+	wasmDir := filepath.Join(homePath, "data")
+
+	wasmConfig, err := wasm.ReadWasmConfig(appOpts)
+	if err != nil {
+		panic("error while reading wasm config: " + err.Error())
+	}
+
+	supportedFeatures := "iterator,staking,stargate"
+	app.wasmKeeper = wasm.NewKeeper(
+		appCodec,
+		keys[wasm.StoreKey],
+		app.GetSubspace(wasm.ModuleName),
+		app.AccountKeeper,
+		app.BankKeeper,
+		app.StakingKeeper,
+		app.DistrKeeper,
+		app.IBCKeeper.ChannelKeeper,
+		&app.IBCKeeper.PortKeeper,
+		scopedWasmKeeper,
+		app.TransferKeeper,
+		app.MsgServiceRouter(),
+		app.GRPCQueryRouter(),
+		wasmDir,
+		wasmConfig,
+		supportedFeatures,
+		wasmOpts...,
+	)
 
 	/**** IBC Routing ****/
 
@@ -589,7 +678,8 @@ func New(
 		transferModule,
 		icaModule,
 		statesetModule,
-		// this line is used by starport scaffolding # stargate/app/appModule
+		orderModule,
+// this line is used by starport scaffolding # stargate/app/appModule
 
 		crisis.NewAppModule(app.CrisisKeeper, skipGenesisInvariants, app.GetSubspace(crisistypes.ModuleName)), // always be last to make sure that it checks for all invariants and not only part of them
 	)
@@ -622,7 +712,9 @@ func New(
 		vestingtypes.ModuleName,
 		consensusparamtypes.ModuleName,
 		statesetmoduletypes.ModuleName,
-		// this line is used by starport scaffolding # stargate/app/beginBlockers
+		ordermoduletypes.ModuleName,
+// this line is used by starport scaffolding # stargate/app/beginBlockers
+		wasm.ModuleName,
 	)
 
 	app.mm.SetOrderEndBlockers(
@@ -648,7 +740,9 @@ func New(
 		vestingtypes.ModuleName,
 		consensusparamtypes.ModuleName,
 		statesetmoduletypes.ModuleName,
-		// this line is used by starport scaffolding # stargate/app/endBlockers
+		ordermoduletypes.ModuleName,
+// this line is used by starport scaffolding # stargate/app/endBlockers
+		wasm.ModuleName,
 	)
 
 	// NOTE: The genutils module must occur after staking so that pools are
@@ -679,7 +773,9 @@ func New(
 		vestingtypes.ModuleName,
 		consensusparamtypes.ModuleName,
 		statesetmoduletypes.ModuleName,
-		// this line is used by starport scaffolding # stargate/app/initGenesis
+		ordermoduletypes.ModuleName,
+// this line is used by starport scaffolding # stargate/app/initGenesis
+		wasm.ModuleName,
 	}
 	app.mm.SetOrderInitGenesis(genesisModuleOrder...)
 	app.mm.SetOrderExportGenesis(genesisModuleOrder...)
@@ -711,6 +807,7 @@ func New(
 	app.MountMemoryStores(memKeys)
 
 	// initialize BaseApp
+	// need to add wasmConfig
 	anteHandler, err := ante.NewAnteHandler(
 		ante.HandlerOptions{
 			AccountKeeper:   app.AccountKeeper,
@@ -723,6 +820,8 @@ func New(
 	if err != nil {
 		panic(fmt.Errorf("failed to create AnteHandler: %w", err))
 	}
+
+	// initialize BaseApp
 
 	app.SetAnteHandler(anteHandler)
 	app.SetInitChainer(app.InitChainer)
@@ -738,25 +837,36 @@ func New(
 	app.ScopedIBCKeeper = scopedIBCKeeper
 	app.ScopedTransferKeeper = scopedTransferKeeper
 	// this line is used by starport scaffolding # stargate/app/beforeInitReturn
-
+	app.scopedWasmKeeper = scopedWasmKeeper
+	app.scopedWasmKeeper = scopedWasmKeeper
 	return app
 }
 
+// MakeCodecs returns the application codec and a legacy Amino codec.
+func MakeCodecs() (codec.Codec, *codec.LegacyAmino) {
+	config := MakeEncodingConfig()
+	return config.Marshaler, config.Amino
+}
+
+func (app *StatesetApp) GetBaseApp() *baseapp.BaseApp {
+	return app.BaseApp
+}
+
 // Name returns the name of the App
-func (app *App) Name() string { return app.BaseApp.Name() }
+func (app *StatesetApp) Name() string { return app.BaseApp.Name() }
 
 // BeginBlocker application updates every begin block
-func (app *App) BeginBlocker(ctx sdk.Context, req abci.RequestBeginBlock) abci.ResponseBeginBlock {
+func (app *StatesetApp) BeginBlocker(ctx sdk.Context, req abci.RequestBeginBlock) abci.ResponseBeginBlock {
 	return app.mm.BeginBlock(ctx, req)
 }
 
 // EndBlocker application updates every end block
-func (app *App) EndBlocker(ctx sdk.Context, req abci.RequestEndBlock) abci.ResponseEndBlock {
+func (app *StatesetApp) EndBlocker(ctx sdk.Context, req abci.RequestEndBlock) abci.ResponseEndBlock {
 	return app.mm.EndBlock(ctx, req)
 }
 
 // InitChainer application update at chain initialization
-func (app *App) InitChainer(ctx sdk.Context, req abci.RequestInitChain) abci.ResponseInitChain {
+func (app *StatesetApp) InitChainer(ctx sdk.Context, req abci.RequestInitChain) abci.ResponseInitChain {
 	var genesisState GenesisState
 	if err := json.Unmarshal(req.AppStateBytes, &genesisState); err != nil {
 		panic(err)
@@ -766,17 +876,17 @@ func (app *App) InitChainer(ctx sdk.Context, req abci.RequestInitChain) abci.Res
 }
 
 // Configurator get app configurator
-func (app *App) Configurator() module.Configurator {
+func (app *StatesetApp) Configurator() module.Configurator {
 	return app.configurator
 }
 
 // LoadHeight loads a particular height
-func (app *App) LoadHeight(height int64) error {
+func (app *StatesetApp) LoadHeight(height int64) error {
 	return app.LoadVersion(height)
 }
 
 // ModuleAccountAddrs returns all the app's module account addresses.
-func (app *App) ModuleAccountAddrs() map[string]bool {
+func (app *StatesetApp) ModuleAccountAddrs() map[string]bool {
 	modAccAddrs := make(map[string]bool)
 	for acc := range maccPerms {
 		modAccAddrs[authtypes.NewModuleAddress(acc).String()] = true
@@ -787,7 +897,7 @@ func (app *App) ModuleAccountAddrs() map[string]bool {
 
 // BlockedModuleAccountAddrs returns all the app's blocked module account
 // addresses.
-func (app *App) BlockedModuleAccountAddrs() map[string]bool {
+func (app *StatesetApp) BlockedModuleAccountAddrs() map[string]bool {
 	modAccAddrs := app.ModuleAccountAddrs()
 	delete(modAccAddrs, authtypes.NewModuleAddress(govtypes.ModuleName).String())
 
@@ -798,61 +908,66 @@ func (app *App) BlockedModuleAccountAddrs() map[string]bool {
 //
 // NOTE: This is solely to be used for testing purposes as it may be desirable
 // for modules to register their own custom testing types.
-func (app *App) LegacyAmino() *codec.LegacyAmino {
+func (app *StatesetApp) LegacyAmino() *codec.LegacyAmino {
 	return app.cdc
 }
 
-// AppCodec returns an app codec.
+// AppCodec returns an Stateset's app codec.
 //
 // NOTE: This is solely to be used for testing purposes as it may be desirable
 // for modules to register their own custom testing types.
-func (app *App) AppCodec() codec.Codec {
+func (app *StatesetApp) AppCodec() codec.Codec {
 	return app.appCodec
 }
 
 // InterfaceRegistry returns an InterfaceRegistry
-func (app *App) InterfaceRegistry() types.InterfaceRegistry {
+func (app *StatesetApp) InterfaceRegistry() types.InterfaceRegistry {
 	return app.interfaceRegistry
 }
 
 // TxConfig returns SimApp's TxConfig
-func (app *App) TxConfig() client.TxConfig {
+func (app *StatesetApp) TxConfig() client.TxConfig {
 	return app.txConfig
 }
 
 // GetKey returns the KVStoreKey for the provided store key.
 //
 // NOTE: This is solely to be used for testing purposes.
-func (app *App) GetKey(storeKey string) *storetypes.KVStoreKey {
+func (app *StatesetApp) GetKey(storeKey string) *storetypes.KVStoreKey {
 	return app.keys[storeKey]
 }
 
 // GetTKey returns the TransientStoreKey for the provided store key.
 //
 // NOTE: This is solely to be used for testing purposes.
-func (app *App) GetTKey(storeKey string) *storetypes.TransientStoreKey {
+func (app *StatesetApp) GetTKey(storeKey string) *storetypes.TransientStoreKey {
 	return app.tkeys[storeKey]
 }
 
 // GetMemKey returns the MemStoreKey for the provided mem key.
 //
 // NOTE: This is solely used for testing purposes.
-func (app *App) GetMemKey(storeKey string) *storetypes.MemoryStoreKey {
+func (app *StatesetApp) GetMemKey(storeKey string) *storetypes.MemoryStoreKey {
 	return app.memKeys[storeKey]
 }
 
 // GetSubspace returns a param subspace for a given module name.
 //
 // NOTE: This is solely to be used for testing purposes.
-func (app *App) GetSubspace(moduleName string) paramstypes.Subspace {
+func (app *StatesetApp) GetSubspace(moduleName string) paramstypes.Subspace {
 	subspace, _ := app.ParamsKeeper.GetSubspace(moduleName)
 	return subspace
 }
 
+func (app *StatesetApp) ModuleManager() module.Manager {
+	return *app.mm
+}
+
 // RegisterAPIRoutes registers all application module routes with the provided
 // API server.
-func (app *App) RegisterAPIRoutes(apiSvr *api.Server, apiConfig config.APIConfig) {
+func (app *StatesetApp) RegisterAPIRoutes(apiSvr *api.Server, apiConfig config.APIConfig) {
 	clientCtx := apiSvr.ClientCtx
+
 	// Register new tx routes from grpc-gateway.
 	authtx.RegisterGRPCGatewayRoutes(clientCtx, apiSvr.GRPCGatewayRouter)
 	// Register new tendermint queries routes from grpc-gateway.
@@ -868,12 +983,12 @@ func (app *App) RegisterAPIRoutes(apiSvr *api.Server, apiConfig config.APIConfig
 }
 
 // RegisterTxService implements the Application.RegisterTxService method.
-func (app *App) RegisterTxService(clientCtx client.Context) {
+func (app *StatesetApp) RegisterTxService(clientCtx client.Context) {
 	authtx.RegisterTxService(app.BaseApp.GRPCQueryRouter(), clientCtx, app.BaseApp.Simulate, app.interfaceRegistry)
 }
 
 // RegisterTendermintService implements the Application.RegisterTendermintService method.
-func (app *App) RegisterTendermintService(clientCtx client.Context) {
+func (app *StatesetApp) RegisterTendermintService(clientCtx client.Context) {
 	tmservice.RegisterTendermintService(
 		clientCtx,
 		app.BaseApp.GRPCQueryRouter(),
@@ -883,7 +998,7 @@ func (app *App) RegisterTendermintService(clientCtx client.Context) {
 }
 
 // RegisterNodeService implements the Application.RegisterNodeService method.
-func (app *App) RegisterNodeService(clientCtx client.Context) {
+func (app *StatesetApp) RegisterNodeService(clientCtx client.Context) {
 	nodeservice.RegisterNodeService(clientCtx, app.GRPCQueryRouter())
 }
 
@@ -904,17 +1019,14 @@ func initParamsKeeper(appCodec codec.BinaryCodec, legacyAmino *codec.LegacyAmino
 	paramsKeeper.Subspace(icacontrollertypes.SubModuleName)
 	paramsKeeper.Subspace(icahosttypes.SubModuleName)
 	paramsKeeper.Subspace(statesetmoduletypes.ModuleName)
-	// this line is used by starport scaffolding # stargate/app/paramSubspace
+	paramsKeeper.Subspace(ordermoduletypes.ModuleName)
+// this line is used by starport scaffolding # stargate/app/paramSubspace
+	paramsKeeper.Subspace(wasm.ModuleName)
 
 	return paramsKeeper
 }
 
 // SimulationManager returns the app SimulationManager
-func (app *App) SimulationManager() *module.SimulationManager {
+func (app *StatesetApp) SimulationManager() *module.SimulationManager {
 	return app.sm
-}
-
-// ModuleManager returns the app ModuleManager
-func (app *App) ModuleManager() *module.Manager {
-	return app.mm
 }

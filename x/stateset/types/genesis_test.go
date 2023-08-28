@@ -22,11 +22,46 @@ func TestGenesisState_Validate(t *testing.T) {
 			desc:     "valid genesis state",
 			genState: &types.GenesisState{
 
-				// this line is used by starport scaffolding # types/genesis/validField
+				OrderList: []types.Order{
+	{
+		Id: 0,
+	},
+	{
+		Id: 1,
+	},
+},
+OrderCount: 2,
+// this line is used by starport scaffolding # types/genesis/validField
 			},
 			valid: true,
 		},
-		// this line is used by starport scaffolding # types/genesis/testcase
+		{
+	desc:     "duplicated order",
+	genState: &types.GenesisState{
+		OrderList: []types.Order{
+			{
+				Id: 0,
+			},
+			{
+				Id: 0,
+			},
+		},
+	},
+	valid:    false,
+},
+{
+	desc:     "invalid order count",
+	genState: &types.GenesisState{
+		OrderList: []types.Order{
+			{
+				Id: 1,
+			},
+		},
+		OrderCount: 0,
+	},
+	valid:    false,
+},
+// this line is used by starport scaffolding # types/genesis/testcase
 	}
 	for _, tc := range tests {
 		t.Run(tc.desc, func(t *testing.T) {

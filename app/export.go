@@ -15,7 +15,7 @@ import (
 
 // ExportAppStateAndValidators exports the state of the application for a genesis
 // file.
-func (app *App) ExportAppStateAndValidators(
+func (app *StatesetApp) ExportAppStateAndValidators(
 	forZeroHeight bool,
 	jailAllowedAddrs []string,
 	modulesToExport []string,
@@ -26,10 +26,6 @@ func (app *App) ExportAppStateAndValidators(
 	// We export at last height + 1, because that's the height at which
 	// Tendermint will start InitChain.
 	height := app.LastBlockHeight() + 1
-	if forZeroHeight {
-		height = 0
-		app.prepForZeroHeightGenesis(ctx, jailAllowedAddrs)
-	}
 
 	genState := app.mm.ExportGenesisForModules(ctx, app.appCodec, modulesToExport)
 	appState, err := json.MarshalIndent(genState, "", "  ")
@@ -50,7 +46,7 @@ func (app *App) ExportAppStateAndValidators(
 //
 // NOTE zero height genesis is a temporary feature which will be deprecated
 // in favour of export at a block height
-func (app *App) prepForZeroHeightGenesis(ctx sdk.Context, jailAllowedAddrs []string) {
+func (app *StatesetApp) prepForZeroHeightGenesis(ctx sdk.Context, jailAllowedAddrs []string) {
 	applyAllowedAddrs := false
 
 	// check if there is a allowed address list

@@ -1,7 +1,41 @@
 syntax = "proto3";
+
 package stateset.stateset;
 
 option go_package = "github.com/stateset/stateset/x/stateset/types";
 
 // Msg defines the Msg service.
-service Msg {}
+service Msg {
+  rpc CompleteOrder (MsgCompleteOrder) returns (MsgCompleteOrderResponse);
+  rpc CancelOrder   (MsgCancelOrder  ) returns (MsgCancelOrderResponse  );
+  rpc CloseOrder    (MsgCloseOrder   ) returns (MsgCloseOrderResponse   );
+  rpc OpenOrder     (MsgOpenOrder    ) returns (MsgOpenOrderResponse    );
+}
+message MsgCompleteOrder {
+  string creator = 1;
+  uint64 id      = 2;
+}
+
+message MsgCompleteOrderResponse {}
+
+message MsgCancelOrder {
+  string creator = 1;
+  uint64 id      = 2;
+}
+
+message MsgCancelOrderResponse {}
+
+message MsgCloseOrder {
+  string creator = 1;
+  uint64 id      = 2;
+}
+
+message MsgCloseOrderResponse {}
+
+message MsgOpenOrder {
+  string creator = 1;
+  uint64 id      = 2;
+}
+
+message MsgOpenOrderResponse {}
+
