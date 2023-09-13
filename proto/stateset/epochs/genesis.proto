@@ -1,0 +1,12 @@
+syntax = "proto3";
+package stateset.epochs;
+
+import "gogoproto/gogo.proto";
+import "stateset/epochs/params.proto";
+
+option go_package = "github.com/stateset/stateset/x/epochs/types";
+
+// GenesisState defines the epochs module's genesis state.
+message GenesisState {
+  Params params = 1 [(gogoproto.nullable) = false];
+}

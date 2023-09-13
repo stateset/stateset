@@ -117,6 +117,12 @@ import (
 	ordermodule "github.com/stateset/stateset/x/order"
 		ordermodulekeeper "github.com/stateset/stateset/x/order/keeper"
 		ordermoduletypes "github.com/stateset/stateset/x/order/types"
+loanmodule "github.com/stateset/stateset/x/loan"
+		loanmodulekeeper "github.com/stateset/stateset/x/loan/keeper"
+		loanmoduletypes "github.com/stateset/stateset/x/loan/types"
+epochsmodule "github.com/stateset/stateset/x/epochs"
+		epochsmodulekeeper "github.com/stateset/stateset/x/epochs/keeper"
+		epochsmoduletypes "github.com/stateset/stateset/x/epochs/types"
 // this line is used by starport scaffolding # stargate/app/moduleImport
 
 	appparams "github.com/stateset/stateset/app/params"
@@ -209,6 +215,8 @@ var (
 		consensus.AppModuleBasic{},
 		statesetmodule.AppModuleBasic{},
 		ordermodule.AppModuleBasic{},
+loanmodule.AppModuleBasic{},
+epochsmodule.AppModuleBasic{},
 // this line is used by starport scaffolding # stargate/app/moduleBasic
 		wasm.AppModuleBasic{},
 	)
@@ -224,6 +232,7 @@ var (
 		govtypes.ModuleName:            {authtypes.Burner},
 		ibctransfertypes.ModuleName:    {authtypes.Minter, authtypes.Burner},
 		ordermoduletypes.ModuleName: {authtypes.Minter, authtypes.Burner, authtypes.Staking},
+loanmoduletypes.ModuleName: {authtypes.Minter, authtypes.Burner, authtypes.Staking},
 // this line is used by starport scaffolding # stargate/app/maccPerms
 		wasm.ModuleName: {authtypes.Burner},
 	}
@@ -285,6 +294,10 @@ type StatesetApp struct {
 	StatesetKeeper statesetmodulekeeper.Keeper
 	
 		OrderKeeper ordermodulekeeper.Keeper
+
+		LoanKeeper loanmodulekeeper.Keeper
+
+		EpochsKeeper epochsmodulekeeper.Keeper
 // this line is used by starport scaffolding # stargate/app/keeperDeclaration
 
 	wasmKeeper       wasm.Keeper
@@ -346,6 +359,8 @@ func NewStatesetApp(
 		capabilitytypes.StoreKey, group.StoreKey, icacontrollertypes.StoreKey, consensusparamtypes.StoreKey,
 		statesetmoduletypes.StoreKey,
 		ordermoduletypes.StoreKey,
+loanmoduletypes.StoreKey,
+epochsmoduletypes.StoreKey,
 // this line is used by starport scaffolding # stargate/app/storeKey
 		wasm.StoreKey,
 	)
@@ -589,6 +604,27 @@ func NewStatesetApp(
 )
 		orderModule := ordermodule.NewAppModule(appCodec, app.OrderKeeper, app.AccountKeeper, app.BankKeeper)
 
+		
+		app.LoanKeeper = *loanmodulekeeper.NewKeeper(
+			appCodec,
+			keys[loanmoduletypes.StoreKey],
+			keys[loanmoduletypes.MemStoreKey],
+			app.GetSubspace(loanmoduletypes.ModuleName),
+			
+			app.BankKeeper,
+)
+		loanModule := loanmodule.NewAppModule(appCodec, app.LoanKeeper, app.AccountKeeper, app.BankKeeper)
+
+		
+		app.EpochsKeeper = *epochsmodulekeeper.NewKeeper(
+			appCodec,
+			keys[epochsmoduletypes.StoreKey],
+			keys[epochsmoduletypes.MemStoreKey],
+			app.GetSubspace(epochsmoduletypes.ModuleName),
+			
+			)
+		epochsModule := epochsmodule.NewAppModule(appCodec, app.EpochsKeeper, app.AccountKeeper, app.BankKeeper)
+
 		// this line is used by starport scaffolding # stargate/app/keeperDefinition
 	wasmDir := filepath.Join(homePath, "data")
 
@@ -679,6 +715,8 @@ func NewStatesetApp(
 		icaModule,
 		statesetModule,
 		orderModule,
+loanModule,
+epochsModule,
 // this line is used by starport scaffolding # stargate/app/appModule
 
 		crisis.NewAppModule(app.CrisisKeeper, skipGenesisInvariants, app.GetSubspace(crisistypes.ModuleName)), // always be last to make sure that it checks for all invariants and not only part of them
@@ -713,6 +751,8 @@ func NewStatesetApp(
 		consensusparamtypes.ModuleName,
 		statesetmoduletypes.ModuleName,
 		ordermoduletypes.ModuleName,
+loanmoduletypes.ModuleName,
+epochsmoduletypes.ModuleName,
 // this line is used by starport scaffolding # stargate/app/beginBlockers
 		wasm.ModuleName,
 	)
@@ -741,6 +781,8 @@ func NewStatesetApp(
 		consensusparamtypes.ModuleName,
 		statesetmoduletypes.ModuleName,
 		ordermoduletypes.ModuleName,
+loanmoduletypes.ModuleName,
+epochsmoduletypes.ModuleName,
 // this line is used by starport scaffolding # stargate/app/endBlockers
 		wasm.ModuleName,
 	)
@@ -774,6 +816,8 @@ func NewStatesetApp(
 		consensusparamtypes.ModuleName,
 		statesetmoduletypes.ModuleName,
 		ordermoduletypes.ModuleName,
+loanmoduletypes.ModuleName,
+epochsmoduletypes.ModuleName,
 // this line is used by starport scaffolding # stargate/app/initGenesis
 		wasm.ModuleName,
 	}
@@ -1020,6 +1064,8 @@ func initParamsKeeper(appCodec codec.BinaryCodec, legacyAmino *codec.LegacyAmino
 	paramsKeeper.Subspace(icahosttypes.SubModuleName)
 	paramsKeeper.Subspace(statesetmoduletypes.ModuleName)
 	paramsKeeper.Subspace(ordermoduletypes.ModuleName)
+paramsKeeper.Subspace(loanmoduletypes.ModuleName)
+paramsKeeper.Subspace(epochsmoduletypes.ModuleName)
 // this line is used by starport scaffolding # stargate/app/paramSubspace
 	paramsKeeper.Subspace(wasm.ModuleName)
 

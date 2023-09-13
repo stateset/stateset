@@ -1,0 +1,12 @@
+syntax = "proto3";
+package stateset.loan;
+
+import "gogoproto/gogo.proto";
+import "stateset/loan/params.proto";
+
+option go_package = "github.com/stateset/stateset/x/loan/types";
+
+// GenesisState defines the loan module's genesis state.
+message GenesisState {
+  Params params = 1 [(gogoproto.nullable) = false];
+}

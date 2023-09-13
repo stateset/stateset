@@ -1,0 +1,12 @@
+syntax = "proto3";
+package stateset.epochs;
+
+import "gogoproto/gogo.proto";
+
+option go_package = "github.com/stateset/stateset/x/epochs/types";
+
+// Params defines the parameters for the module.
+message Params {
+  option (gogoproto.goproto_stringer) = false;
+  
+}
